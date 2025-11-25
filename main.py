@@ -165,11 +165,11 @@ async def analyze_endpoint(data: Dict) -> Dict[str, str]:
 @app.post("/api/transcribe-youtube")
 async def transcribe_youtube_endpoint(data: Dict) -> Dict[str, str]:
     """
-    Transcribe audio from a YouTube URL.
+    Transcribe audio from a YouTube URL using hybrid approach.
     
-    Downloads audio from YouTube (no FFmpeg required), transcribes it
-    using Gemini AI, and returns the transcription. Temporary files
-    are automatically cleaned up.
+    This endpoint uses a two-step fallback strategy:
+    1. Try to download audio with yt-dlp (with anti-bot headers)
+    2. If that fails, try to get transcript directly from YouTube (for videos with captions)
     
     Args:
         data (dict): JSON body with "url" field.
@@ -182,7 +182,7 @@ async def transcribe_youtube_endpoint(data: Dict) -> Dict[str, str]:
     
     Raises:
         HTTPException: 400 if "url" field is missing or invalid.
-        HTTPException: 500 if download or transcription fails.
+        HTTPException: 500 if both download and transcript fallback fail.
         
     Example Request:
         POST /api/transcribe-youtube
@@ -206,14 +206,24 @@ async def transcribe_youtube_endpoint(data: Dict) -> Dict[str, str]:
     
     audio_file_path = None
     try:
-        # Download audio from YouTube
+        # Download audio from YouTube (with fallback to transcript)
         logger.info(f"Processing YouTube URL: {url}")
         audio_file_path = await download_youtube_audio(url)
         
-        # Transcribe downloaded audio
+        # Check if we got a transcript fallback (marked with TRANSCRIPT: prefix)
+        if audio_file_path.startswith("TRANSCRIPT:"):
+            # Read the transcript file directly
+            transcript_file = audio_file_path.replace("TRANSCRIPT:", "")
+            with open(transcript_file, 'r', encoding='utf-8') as f:
+                transcription = f.read()
+            
+            logger.info("YouTube transcript retrieved successfully (fallback method)")
+            return {"transcription": transcription}
+        
+        # We have an actual audio file, transcribe it with Gemini
         transcription = await transcribe_audio(audio_file_path)
         
-        logger.info("YouTube transcription completed successfully")
+        logger.info("YouTube audio transcription completed successfully")
         return {"transcription": transcription}
         
     except Exception as e:
@@ -222,11 +232,15 @@ async def transcribe_youtube_endpoint(data: Dict) -> Dict[str, str]:
         
     finally:
         # Clean up temporary directory
-        if audio_file_path and os.path.exists(audio_file_path):
-            temp_dir = os.path.dirname(audio_file_path)
-            if temp_dir and os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                logger.debug(f"Cleaned up temporary directory: {temp_dir}")
+        if audio_file_path:
+            # Handle both regular files and transcript markers
+            file_path = audio_file_path.replace("TRANSCRIPT:", "") if audio_file_path.startswith("TRANSCRIPT:") else audio_file_path
+            
+            if os.path.exists(file_path):
+                temp_dir = os.path.dirname(file_path)
+                if temp_dir and os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    logger.debug(f"Cleaned up temporary directory: {temp_dir}")
 
 # ============================================================================
 # STATIC FILE SERVING (Production)

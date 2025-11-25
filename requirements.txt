@@ -4,4 +4,5 @@ python-multipart
 google-generativeai
 python-dotenv
 yt-dlp
+youtube-transcript-api
 gunicorn
