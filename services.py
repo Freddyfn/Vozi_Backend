@@ -110,20 +110,34 @@ async def get_youtube_transcript(url: str) -> Tuple[str, str]:
         video_id = extract_video_id(url)
         logger.info(f"Attempting to get transcript for video ID: {video_id}")
         
-        # Get transcript (tries auto-generated and manual captions)
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        # Try to get transcript in different languages
+        # This will try manual and auto-generated captions
+        transcript_data = None
+        languages_to_try = [['en'], ['es'], ['en', 'es']]
         
-        # Try to get English transcript first, fall back to any available
-        try:
-            transcript = transcript_list.find_transcript(['en', 'es'])
-        except:
-            # Get any available transcript
-            transcript = transcript_list.find_generated_transcript(['en', 'es'])
+        for lang_codes in languages_to_try:
+            try:
+                transcript_data = YouTubeTranscriptApi.get_transcript(
+                    video_id, 
+                    languages=lang_codes
+                )
+                logger.info(f"Found transcript in language(s): {lang_codes}")
+                break
+            except Exception as e:
+                logger.debug(f"No transcript found for languages {lang_codes}: {e}")
+                continue
+        
+        # If no transcript found in any language, raise error
+        if not transcript_data:
+            raise NoTranscriptFound(
+                video_id, 
+                ['en', 'es'], 
+                "No transcripts available for this video"
+            )
         
         # Format transcript with timestamps
-        entries = transcript.fetch()
         formatted_text = ""
-        for entry in entries:
+        for entry in transcript_data:
             timestamp = int(entry['start'])
             minutes = timestamp // 60
             seconds = timestamp % 60
