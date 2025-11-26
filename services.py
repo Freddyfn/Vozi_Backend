@@ -242,8 +242,23 @@ async def download_youtube_audio(url: str) -> str:
                 break
         
         if cookie_file:
-            ydl_opts['cookiefile'] = cookie_file
-            logger.info(f"Using cookies.txt found at: {cookie_file}")
+            # CLEAN COOKIE FILE: Convert Windows CRLF to Unix LF to avoid yt-dlp errors
+            try:
+                # Create a temp clean cookie file
+                clean_cookie_path = os.path.join(temp_dir, 'clean_cookies.txt')
+                with open(cookie_file, 'rb') as f_in:
+                    content = f_in.read()
+                    # Replace CRLF with LF
+                    content = content.replace(b'\r\n', b'\n')
+                
+                with open(clean_cookie_path, 'wb') as f_out:
+                    f_out.write(content)
+                
+                ydl_opts['cookiefile'] = clean_cookie_path
+                logger.info(f"Using cleaned cookies from: {cookie_file}")
+            except Exception as e:
+                logger.warning(f"Failed to clean cookie file, using original: {e}")
+                ydl_opts['cookiefile'] = cookie_file
         else:
             logger.warning("cookies.txt not found in any location - proceeding without authentication (higher risk of blocking)")
         
