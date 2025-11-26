@@ -227,6 +227,26 @@ async def download_youtube_audio(url: str) -> str:
             'age_limit': None,
         }
         
+        # Check for cookies.txt in multiple locations (Azure persistence fix)
+        # Azure runs from a temp folder, so we need to check the persistent wwwroot
+        cookie_locations = [
+            'cookies.txt',                        # Current directory
+            '/home/site/wwwroot/cookies.txt',     # Azure persistent storage
+            '../cookies.txt'                      # Parent directory (fallback)
+        ]
+        
+        cookie_file = None
+        for location in cookie_locations:
+            if os.path.exists(location):
+                cookie_file = location
+                break
+        
+        if cookie_file:
+            ydl_opts['cookiefile'] = cookie_file
+            logger.info(f"Using cookies.txt found at: {cookie_file}")
+        else:
+            logger.warning("cookies.txt not found in any location - proceeding without authentication (higher risk of blocking)")
+        
         logger.info(f"Attempting to download audio from YouTube: {url}")
 
         # Attempt download with yt-dlp
